@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Simple WebRTC Client</title>
+  <style>
+    video { width: 300px; border: 1px solid black; }
+  </style>
+</head>
+<body>
+
+<h2>WebRTC Demo</h2>
+
+<button id="login">Login with Google</button>
+<br><br>
+
+<input id="callee" placeholder="callee email" />
+<button id="call">Call</button>
+
+<h3>Local</h3>
+<video id="local" autoplay muted playsinline></video>
+
+<h3>Remote</h3>
+<video id="remote" autoplay playsinline></video>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<script>
+const BACKEND = "http://webrtc-signalling-backend.onrender.com:3000";
+const WS_BACKEND = "ws://webrtc-signalling-backend.onrender.com:3000";
+
+let socket;
+let pc;
+let localStream;
+let myEmail;
+
+/* ---------- Google Login ---------- */
+
+window.onload = () => {
+  google.accounts.id.initialize({
+    client_id: "YOUR_GOOGLE_CLIENT_ID",
+    callback: handleGoogleLogin
+  });
+
+  document.getElementById("login").onclick = () => {
+    google.accounts.id.prompt();
+  };
+};
+
+async function handleGoogleLogin(response) {
+  const res = await fetch(`${BACKEND}/auth/google`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idToken: response.credential })
+  });
+
+  const data = await res.json();
+  connectWebSocket(data.token);
+}
+
+/* ---------- WebSocket ---------- */
+
+function connectWebSocket(token) {
+  socket = new WebSocket(`${WS_BACKEND}?token=${token}`);
+
+  socket.onmessage = async (event) => {
+    const msg = JSON.parse(event.data);
+
+    if (msg.type === "offer") {
+      await ensurePeerConnection();
+      await pc.setRemoteDescription(msg.sdp);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      send({ type: "answer", to: msg.from, sdp: answer });
+    }
+
+    if (msg.type === "answer") {
+      await pc.setRemoteDescription(msg.sdp);
+    }
+
+    if (msg.type === "ice") {
+      await pc.addIceCandidate(msg.candidate);
+    }
+  };
+}
+
+/* ---------- Call ---------- */
+
+document.getElementById("call").onclick = async () => {
+  const email = document.getElementById("callee").value;
+  await ensurePeerConnection();
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  send({ type: "offer", to: email, sdp: offer });
+};
+
+/* ---------- WebRTC ---------- */
+
+async function ensurePeerConnection() {
+  if (pc) return;
+
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true
+  });
+
+  document.getElementById("local").srcObject = localStream;
+
+  pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" }
+    ]
+  });
+
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+  pc.ontrack = e => {
+    document.getElementById("remote").srcObject = e.streams[0];
+  };
+
+  pc.onicecandidate = e => {
+    if (e.candidate) {
+      send({ type: "ice", to: currentPeer(), candidate: e.candidate });
+    }
+  };
+}
+
+/* ---------- Helpers ---------- */
+
+function send(msg) {
+  socket.send(JSON.stringify(msg));
+}
+
+function currentPeer() {
+  return document.getElementById("callee").value;
+}
+</script>
+
+</body>
+</html>
