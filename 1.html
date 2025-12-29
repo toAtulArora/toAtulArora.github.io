@@ -26,8 +26,8 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <script>
-const BACKEND = "http://webrtc-signalling-backend.onrender.com:3000";
-const WS_BACKEND = "ws://webrtc-signalling-backend.onrender.com:3000";
+const BACKEND = "http://webrtc-signalling-backend.onrender.com"; //:10000
+const WS_BACKEND = "ws://webrtc-signalling-backend.onrender.com";
 
 let socket;
 let pc;
@@ -38,7 +38,7 @@ let myEmail;
 
 window.onload = () => {
   google.accounts.id.initialize({
-    client_id: "YOUR_GOOGLE_CLIENT_ID",
+    client_id: "toAtulArora@gmail.com",
     callback: handleGoogleLogin
   });
 
